@@ -1,3 +1,4 @@
+import uuid as _uuid
 from datetime import datetime, timedelta, date as date_type
 
 DAYS_PT = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
@@ -63,3 +64,25 @@ def generate_time_slots(
         current = slot_end
 
     return slots
+
+
+def generate_ics(summary: str, description: str, start_dt: datetime, end_dt: datetime) -> bytes:
+    def _esc(s: str) -> str:
+        return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+    now = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Agendador//PT",
+        "BEGIN:VEVENT",
+        f"UID:{_uuid.uuid4()}",
+        f"DTSTAMP:{now}",
+        f"DTSTART:{start_dt.strftime('%Y%m%dT%H%M%S')}",
+        f"DTEND:{end_dt.strftime('%Y%m%dT%H%M%S')}",
+        f"SUMMARY:{_esc(summary)}",
+        f"DESCRIPTION:{_esc(description)}",
+        "END:VEVENT",
+        "END:VCALENDAR",
+    ]
+    return "\r\n".join(lines).encode("utf-8")

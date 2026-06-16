@@ -1,12 +1,12 @@
 import urllib.parse
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import streamlit as st
 
 from lib.availability import get_available_slots
 from lib.supabase_client import get_supabase, get_supabase_admin
-from lib.telegram import send_telegram
-from lib.utils import format_currency, format_date_ptbr, format_phone, mask_phone
+from lib.telegram import send_telegram, send_telegram_document
+from lib.utils import format_currency, format_date_ptbr, format_phone, mask_phone, generate_ics
 
 st.set_page_config(
     page_title="Agendamento",
@@ -46,7 +46,22 @@ def _notify_telegram(client_name, phone_digits, svc, barber, date_str, slot) -> 
             f"<b>Data:</b> {format_date_ptbr(date_str).capitalize()} às {slot['time']}\n"
             f"<b>Valor:</b> {format_currency(svc['price_cents'])}"
         )
-        send_telegram(bot_token, chat_id, msg)  # errors swallowed intentionally
+        send_telegram(bot_token, chat_id, msg)
+
+        start_dt = datetime.fromisoformat(slot["starts_at"])
+        end_dt = datetime.fromisoformat(slot["ends_at"])
+        ics = generate_ics(
+            summary=f"{svc['name']} – {client_name}",
+            description=(
+                f"Cliente: {client_name}\n"
+                f"Telefone: {format_phone(phone_digits)}\n"
+                f"Serviço: {svc['name']} ({svc['duration_min']} min)\n"
+                f"Valor: {format_currency(svc['price_cents'])}"
+            ),
+            start_dt=start_dt,
+            end_dt=end_dt,
+        )
+        send_telegram_document(bot_token, chat_id, "agendamento.ics", ics)
     except Exception:
         pass
 
