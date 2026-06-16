@@ -1,22 +1,34 @@
+import time
 from datetime import datetime, timedelta, date as date_type
-
-import streamlit as st
 
 from lib.supabase_client import get_supabase
 from lib.utils import generate_time_slots, day_of_week_from_date
+
+_cache: dict = {}
+_TTL = 30
 
 
 def _overlaps(s1: datetime, e1: datetime, s2: datetime, e2: datetime) -> bool:
     return s1 < e2 and e1 > s2
 
 
-@st.cache_data(ttl=30, show_spinner=False)
 def get_available_slots(
     barber_id: str,
     service_id: str,
     duration_min: int,
     date_str: str,
 ) -> list[dict]:
+    key = (barber_id, service_id, duration_min, date_str)
+    now = time.time()
+    if key in _cache and now - _cache[key][0] < _TTL:
+        return _cache[key][1]
+
+    result = _compute(barber_id, service_id, duration_min, date_str)
+    _cache[key] = (now, result)
+    return result
+
+
+def _compute(barber_id: str, service_id: str, duration_min: int, date_str: str) -> list[dict]:
     sb = get_supabase()
     date_obj = datetime.fromisoformat(date_str).date()
     day_of_week = day_of_week_from_date(date_obj)

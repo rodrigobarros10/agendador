@@ -1,18 +1,19 @@
-import streamlit as st
+import os
 from supabase import create_client, Client
 
+_anon: Client | None = None
+_admin: Client | None = None
 
-@st.cache_resource
+
 def get_supabase() -> Client:
-    return create_client(
-        st.secrets["SUPABASE_URL"],
-        st.secrets["SUPABASE_ANON_KEY"],
-    )
+    global _anon
+    if _anon is None:
+        _anon = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"])
+    return _anon
 
 
-@st.cache_resource
 def get_supabase_admin() -> Client:
-    return create_client(
-        st.secrets["SUPABASE_URL"],
-        st.secrets["SUPABASE_SERVICE_KEY"],
-    )
+    global _admin
+    if _admin is None:
+        _admin = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
+    return _admin
