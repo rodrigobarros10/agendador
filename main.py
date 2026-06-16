@@ -2,6 +2,7 @@ import os
 import time
 import uuid
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 
 from dotenv import load_dotenv
@@ -11,7 +12,7 @@ from fasthtml.common import *
 from starlette.responses import RedirectResponse
 
 from lib.availability import get_available_slots
-from lib.google_calendar import auth_url, exchange_code, create_event
+from lib.google_calendar import auth_url, exchange_code, create_event, get_user_email
 from lib.supabase_client import get_supabase, get_supabase_admin
 from lib.telegram import send_telegram, send_telegram_document
 from lib.utils import format_currency, format_date_ptbr, format_phone, mask_phone, generate_ics
@@ -205,7 +206,7 @@ def _redirect_uri() -> str:
 # ── TTL cache for shop/barbers/services ───────────────────────────────────────
 
 _shop_cache: dict = {}
-_TTL = 60
+_TTL = 300  # 5 min — dados estáticos mudam raramente
 
 
 def _cached(key: str, fn):
@@ -236,6 +237,14 @@ def _load_services(shop_id: str):
         get_supabase().table("services").select("*")
         .eq("barbershop_id", shop_id).eq("is_active", True).order("sort_order").execute().data or []
     )
+
+
+def _load_shop_data(shop_id: str) -> tuple[list, list]:
+    """Carrega barbers e services em paralelo."""
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        bf = ex.submit(_load_barbers, shop_id)
+        sf = ex.submit(_load_services, shop_id)
+        return bf.result(), sf.result()
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
 
@@ -331,7 +340,7 @@ def _step_login(slug: str):
               style="margin-bottom:1.25rem"),
             A(
                 "🔑 Entrar com Google",
-                href=f"/{slug}/auth/google",
+                href=f"/shop/{slug}/auth/google",
                 cls="btn-primary",
                 style="margin-top:0",
             ),
@@ -349,7 +358,7 @@ def _step_service(slug: str, services: list):
                 Small(s["description"], cls="meta") if s.get("description") else "",
                 type="submit", cls="opt-btn",
             ),
-            hx_post=f"/{slug}/service",
+            hx_post=f"/shop/{slug}/service",
             hx_target="#wizard",
             hx_swap="outerHTML",
         )
@@ -368,13 +377,13 @@ def _step_barber(slug: str, barbers: list):
                 Small(b["bio"], cls="meta") if b.get("bio") else "",
                 type="submit", cls="opt-btn",
             ),
-            hx_post=f"/{slug}/barber",
+            hx_post=f"/shop/{slug}/barber",
             hx_target="#wizard",
             hx_swap="outerHTML",
         )
         for b in barbers
     ]
-    back = Button("← Voltar", hx_get=f"/{slug}/back/service",
+    back = Button("← Voltar", hx_get=f"/shop/{slug}/back/service",
                   hx_target="#wizard", hx_swap="outerHTML", cls="btn-back")
     return H2("Escolha o profissional"), *btns, back
 
@@ -390,7 +399,7 @@ def _step_datetime(slug: str, svc: dict, barber: dict, date_str: str = "", slots
             max=(today + timedelta(days=29)).isoformat(),
         ),
         Button("Ver horários →", type="submit", cls="btn-primary", style="margin-top:0"),
-        hx_post=f"/{slug}/datetime",
+        hx_post=f"/shop/{slug}/datetime",
         hx_target="#wizard",
         hx_swap="outerHTML",
     )
@@ -407,7 +416,7 @@ def _step_datetime(slug: str, svc: dict, barber: dict, date_str: str = "", slots
                     Input(type="hidden", name="ends_at", value=s["ends_at"]),
                     Input(type="hidden", name="slot_time", value=s["time"]),
                     Button(s["time"], type="submit", cls="slot-btn"),
-                    hx_post=f"/{slug}/slot",
+                    hx_post=f"/shop/{slug}/slot",
                     hx_target="#wizard",
                     hx_swap="outerHTML",
                     cls="slot-form",
@@ -416,7 +425,7 @@ def _step_datetime(slug: str, svc: dict, barber: dict, date_str: str = "", slots
             ]
             slots_section = Div(*slot_forms, cls="slots-grid", style="margin-top:0.75rem")
 
-    back = Button("← Voltar", hx_get=f"/{slug}/back/barber",
+    back = Button("← Voltar", hx_get=f"/shop/{slug}/back/barber",
                   hx_target="#wizard", hx_swap="outerHTML", cls="btn-back")
 
     return (
@@ -456,10 +465,10 @@ def _step_form(slug: str, svc: dict, barber: dict, date_str: str, slot: dict, er
                 Textarea(name="notes", maxlength="500", rows="3"),
                 cls="field"),
             Button("Confirmar agendamento", type="submit", cls="btn-primary"),
-            Button("← Voltar", hx_get=f"/{slug}/back/datetime",
+            Button("← Voltar", hx_get=f"/shop/{slug}/back/datetime",
                    hx_target="#wizard", hx_swap="outerHTML", cls="btn-back",
                    type="button"),
-            hx_post=f"/{slug}/booking",
+            hx_post=f"/shop/{slug}/booking",
             hx_target="#wizard",
             hx_swap="outerHTML",
         ),
@@ -491,13 +500,20 @@ def _step_success(slug: str, shop: dict, svc: dict, barber: dict, date_str: str,
         ),
         wa_btn,
         Button("Fazer novo agendamento",
-               hx_get=f"/{slug}", hx_target="body", hx_swap="innerHTML",
+               hx_get=f"/shop/{slug}", hx_target="body", hx_swap="innerHTML",
                cls="btn-back", style="display:block;margin-top:1rem"),
     )
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+RESERVED = {"admin", "auth", "barber", "favicon.ico", "static"}
+
 @rt("/{slug}")
+def get_redirect(slug: str):
+    return RedirectResponse(f"/shop/{slug}", status_code=302)
+
+
+@rt("/shop/{slug}")
 def get(slug: str, session):
     shop = _load_shop(slug)
     if not shop:
@@ -516,7 +532,7 @@ def get(slug: str, session):
     )
 
 
-@rt("/{slug}/auth/google")
+@rt("/shop/{slug}/auth/google")
 def google_login(slug: str, session):
     nonce = uuid.uuid4().hex
     session["oauth_nonce"] = nonce
@@ -529,7 +545,7 @@ def google_login(slug: str, session):
 def oauth_callback(session, code: str = "", state: str = "", error: str = ""):
     if error or not code:
         slug = session.get("pending_slug", "")
-        return RedirectResponse(f"/{slug}", status_code=302)
+        return RedirectResponse(f"/shop/{slug}", status_code=302)
 
     parts = state.split(":", 2)
     kind = parts[0] if parts else ""
@@ -542,21 +558,14 @@ def oauth_callback(session, code: str = "", state: str = "", error: str = ""):
             session["google_refresh_token"] = refresh_token
         elif access_token:
             session["google_access_token"] = access_token
-        return RedirectResponse(f"/{slug}", status_code=302)
+        return RedirectResponse(f"/shop/{slug}", status_code=302)
 
     if kind == "admin":
         if access_token:
-            import urllib.request, json as _json
-            req = urllib.request.Request(
-                "https://www.googleapis.com/oauth2/v2/userinfo",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-            with urllib.request.urlopen(req) as resp:
-                info = _json.loads(resp.read())
-            email = info.get("email", "")
+            email = get_user_email(access_token)
             if email == ADMIN_EMAIL:
                 session["admin_email"] = email
-        return RedirectResponse("/admin", status_code=302)
+        return RedirectResponse("/admin/home", status_code=302)
 
     if kind == "barber":
         barber_id = parts[1] if len(parts) > 1 else ""
@@ -585,7 +594,7 @@ def barber_connect(barber_id: str, session):
     return RedirectResponse(auth_url(_redirect_uri(), state), status_code=302)
 
 
-@rt("/{slug}/service", methods=["POST"])
+@rt("/shop/{slug}/service", methods=["POST"])
 def post_service(slug: str, session, svc_id: str):
     shop = _load_shop(slug)
     services = _load_services(shop["id"])
@@ -597,7 +606,7 @@ def post_service(slug: str, session, svc_id: str):
     return _wizard(slug, "barber", *_step_barber(slug, barbers))
 
 
-@rt("/{slug}/barber", methods=["POST"])
+@rt("/shop/{slug}/barber", methods=["POST"])
 def post_barber(slug: str, session, barber_id: str):
     shop = _load_shop(slug)
     barbers = _load_barbers(shop["id"])
@@ -610,7 +619,7 @@ def post_barber(slug: str, session, barber_id: str):
     return _wizard(slug, "datetime", *_step_datetime(slug, svc, barber))
 
 
-@rt("/{slug}/datetime", methods=["POST"])
+@rt("/shop/{slug}/datetime", methods=["POST"])
 def post_datetime(slug: str, session, date_str: str):
     shop = _load_shop(slug)
     services = _load_services(shop["id"])
@@ -629,7 +638,7 @@ def post_datetime(slug: str, session, date_str: str):
     return _wizard(slug, "datetime", *_step_datetime(slug, svc, barber, date_str=date_str, slots=slots))
 
 
-@rt("/{slug}/slot", methods=["POST"])
+@rt("/shop/{slug}/slot", methods=["POST"])
 def post_slot(slug: str, session, starts_at: str, ends_at: str, slot_time: str):
     shop = _load_shop(slug)
     services = _load_services(shop["id"])
@@ -641,7 +650,7 @@ def post_slot(slug: str, session, starts_at: str, ends_at: str, slot_time: str):
     return _wizard(slug, "form", *_step_form(slug, svc, barber, session["date_str"], slot))
 
 
-@rt("/{slug}/booking", methods=["POST"])
+@rt("/shop/{slug}/booking", methods=["POST"])
 async def post_booking(slug: str, session, request: Request,
                        name: str = "", phone: str = "", email: str = "", notes: str = ""):
     shop = _load_shop(slug)
@@ -721,7 +730,7 @@ async def post_booking(slug: str, session, request: Request,
     return _wizard(slug, "success", *_step_success(slug, shop, svc, barber, date_str, slot))
 
 
-@rt("/{slug}/back/{to_step}")
+@rt("/shop/{slug}/back/{to_step}")
 def back(slug: str, session, to_step: str):
     shop = _load_shop(slug)
     services = _load_services(shop["id"])
@@ -737,6 +746,12 @@ def back(slug: str, session, to_step: str):
         return _wizard(slug, "datetime",
                        *_step_datetime(slug, svc, barber, date_str=session.get("date_str", "")))
     return _wizard(slug, "service", *_step_service(slug, services))
+
+# ── Debug (remova antes do deploy) ────────────────────────────────────────────
+
+@rt("/debug/redirect-uri")
+def debug_uri():
+    return P(f"Redirect URI gerado: {_redirect_uri()}")
 
 # ── Admin ─────────────────────────────────────────────────────────────────────
 
@@ -785,7 +800,7 @@ def _admin_nav(current: str = ""):
     return Div(
         Span("⚡ SaaS Admin", style="font-weight:700;font-size:1rem"),
         Div(
-            A("Dashboard", href="/admin", cls="nav-link", style="margin-right:1rem"),
+            A("Dashboard", href="/admin/home", cls="nav-link", style="margin-right:1rem"),
             A("Barbearias", href="/admin/barbershops", cls="nav-link", style="margin-right:1rem"),
             A("Nova barbearia", href="/admin/barbershops/new", cls="nav-link"),
         ),
@@ -800,7 +815,7 @@ def _status_badge(status: str):
     return Span(labels.get(status, status), cls=f"badge badge-{status}")
 
 
-@rt("/admin")
+@rt("/admin/home")
 def admin_home(session):
     if not _is_admin(session):
         return Title("Admin"), *_admin_page(
@@ -868,7 +883,7 @@ def admin_google_auth(session):
 @rt("/admin/barbershops/new")
 def admin_new_shop(session):
     if not _is_admin(session):
-        return RedirectResponse("/admin", status_code=302)
+        return RedirectResponse("/admin/home", status_code=302)
 
     return Title("Nova barbearia"), *_admin_page(
         _admin_nav(),
@@ -915,7 +930,7 @@ def admin_new_shop(session):
             Div(Label("Próxima cobrança"), Input(name="next_billing_date", type="date"), cls="field"),
 
             Button("Criar barbearia", type="submit", cls="btn-primary"),
-            A("Cancelar", href="/admin", cls="btn-back", style="display:inline-block;margin-left:1rem"),
+            A("Cancelar", href="/admin/home", cls="btn-back", style="display:inline-block;margin-left:1rem"),
             action="/admin/barbershops/new",
             method="post",
         ),
@@ -930,7 +945,7 @@ async def admin_create_shop(session, request: Request,
                             subscription_status: str = "trial", monthly_price: str = "99",
                             next_billing_date: str = ""):
     if not _is_admin(session):
-        return RedirectResponse("/admin", status_code=302)
+        return RedirectResponse("/admin/home", status_code=302)
 
     try:
         price_cents = int(float(monthly_price) * 100)
@@ -959,18 +974,18 @@ async def admin_create_shop(session, request: Request,
 @rt("/admin/barbershops")
 def admin_list_shops(session):
     if not _is_admin(session):
-        return RedirectResponse("/admin", status_code=302)
-    return RedirectResponse("/admin", status_code=302)
+        return RedirectResponse("/admin/home", status_code=302)
+    return RedirectResponse("/admin/home", status_code=302)
 
 
 @rt("/admin/barbershops/{shop_id}")
 def admin_edit_shop(shop_id: str, session):
     if not _is_admin(session):
-        return RedirectResponse("/admin", status_code=302)
+        return RedirectResponse("/admin/home", status_code=302)
 
     res = get_supabase_admin().table("barbershops").select("*").eq("id", shop_id).limit(1).execute()
     if not res.data:
-        return RedirectResponse("/admin", status_code=302)
+        return RedirectResponse("/admin/home", status_code=302)
     s = res.data[0]
 
     price_str = f"{(s.get('monthly_price_cents') or 9900) / 100:.2f}"
@@ -1020,7 +1035,7 @@ def admin_edit_shop(shop_id: str, session):
             Div(Label("Próxima cobrança"), Input(name="next_billing_date", type="date", value=s.get("next_billing_date") or ""), cls="field"),
 
             Button("Salvar alterações", type="submit", cls="btn-primary"),
-            A("Cancelar", href="/admin", cls="btn-back", style="display:inline-block;margin-left:1rem"),
+            A("Cancelar", href="/admin/home", cls="btn-back", style="display:inline-block;margin-left:1rem"),
             action=f"/admin/barbershops/{shop_id}",
             method="post",
         ),
@@ -1035,7 +1050,7 @@ async def admin_update_shop(shop_id: str, session, request: Request,
                             subscription_status: str = "trial", monthly_price: str = "99",
                             next_billing_date: str = ""):
     if not _is_admin(session):
-        return RedirectResponse("/admin", status_code=302)
+        return RedirectResponse("/admin/home", status_code=302)
 
     try:
         price_cents = int(float(monthly_price) * 100)
@@ -1058,7 +1073,7 @@ async def admin_update_shop(shop_id: str, session, request: Request,
         "is_active": subscription_status in ("active", "trial"),
     }).eq("id", shop_id).execute()
 
-    return RedirectResponse("/admin", status_code=302)
+    return RedirectResponse("/admin/home", status_code=302)
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
