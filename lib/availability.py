@@ -65,16 +65,16 @@ def get_available_slots(
         appointment_conflict = any(
             _overlaps(
                 slot_start, slot_end,
-                datetime.fromisoformat(a["starts_at"]),
-                datetime.fromisoformat(a["ends_at"]),
+                datetime.fromisoformat(a["starts_at"]).replace(tzinfo=None),
+                datetime.fromisoformat(a["ends_at"]).replace(tzinfo=None),
             )
             for a in (existing_res.data or [])
         )
         time_off_conflict = any(
             _overlaps(
                 slot_start, slot_end,
-                datetime.fromisoformat(t["start_at"]),
-                datetime.fromisoformat(t["end_at"]),
+                datetime.fromisoformat(t["start_at"]).replace(tzinfo=None),
+                datetime.fromisoformat(t["end_at"]).replace(tzinfo=None),
             )
             for t in (time_off_res.data or [])
         )
