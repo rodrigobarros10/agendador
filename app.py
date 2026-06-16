@@ -46,7 +46,7 @@ def _notify_telegram(client_name, phone_digits, svc, barber, date_str, slot) -> 
             f"<b>Data:</b> {format_date_ptbr(date_str).capitalize()} às {slot['time']}\n"
             f"<b>Valor:</b> {format_currency(svc['price_cents'])}"
         )
-        send_telegram(bot_token, chat_id, msg)
+        send_telegram(bot_token, chat_id, msg)  # errors swallowed intentionally
     except Exception:
         pass
 
@@ -292,6 +292,7 @@ elif st.session_state.step == "form":
             for msg in errors:
                 st.error(msg)
         else:
+            _booked = False
             try:
                 res = (
                     get_supabase()
@@ -313,12 +314,14 @@ elif st.session_state.step == "form":
                 )
                 st.session_state.appointment_id = res.data[0]["id"]
                 _notify_telegram(name.strip(), digits, svc, barber, date_str, slot)
-                _go("success")
+                _booked = True
             except Exception as exc:
                 if "APPOINTMENT_OVERLAP" in str(exc):
                     st.error("Este horário não está mais disponível. Escolha outro.")
                 else:
                     st.error("Erro ao criar agendamento. Tente novamente.")
+            if _booked:
+                _go("success")
 
 # ── Step: success ──────────────────────────────────────────────────────────────
 

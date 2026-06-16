@@ -565,7 +565,7 @@ with tab_cfg:
             test_name = st.selectbox("Profissional", [b["name"] for b in with_chat], key="test_tg")
             if st.button("Enviar mensagem de teste"):
                 target = next(b for b in with_chat if b["name"] == test_name)
-                ok = send_telegram(
+                ok, err = send_telegram(
                     st.secrets["TELEGRAM_BOT_TOKEN"],
                     target["telegram_chat_id"],
                     f"✅ Teste de notificação da <b>{shop['name']}</b>!",
@@ -573,7 +573,7 @@ with tab_cfg:
                 if ok:
                     st.success("Enviado com sucesso!")
                 else:
-                    st.error("Falha — verifique token e Chat ID.")
+                    st.error(f"Falha: {err}")
 
     st.divider()
 
