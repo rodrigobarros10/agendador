@@ -3,6 +3,9 @@ import time
 import urllib.parse
 from datetime import date, datetime, timedelta
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from fasthtml.common import *
 
 from lib.availability import get_available_slots
@@ -29,8 +32,8 @@ CSS = """
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: system-ui, -apple-system, sans-serif;
-    background: #f5f5f5;
-    color: #1a1a1a;
+    background: #0d0d0d;
+    color: #e8e8e8;
     min-height: 100vh;
 }
 .container {
@@ -40,13 +43,13 @@ body {
 }
 h1 { font-size: 1.4rem; font-weight: 700; }
 h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; }
-.meta { color: #666; font-size: 0.875rem; }
-.divider { border: none; border-top: 1px solid #e5e5e5; margin: 1rem 0; }
+.meta { color: #888; font-size: 0.875rem; }
+.divider { border: none; border-top: 1px solid #2a2a2a; margin: 1rem 0; }
 
 /* Cards */
 .card {
-    background: white;
-    border: 1px solid #e5e5e5;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
     border-radius: 12px;
     padding: 1rem;
     margin-bottom: 0.75rem;
@@ -56,24 +59,25 @@ h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; }
 .opt-btn {
     display: block;
     width: 100%;
-    background: white;
-    border: 1px solid #e5e5e5;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
     border-radius: 10px;
     padding: 0.875rem 1rem;
     text-align: left;
     cursor: pointer;
     font-size: 0.95rem;
+    color: #e8e8e8;
     margin-bottom: 0.5rem;
     transition: border-color 0.15s, background 0.15s;
 }
-.opt-btn:hover { border-color: #1a1a1a; background: #fafafa; }
+.opt-btn:hover { border-color: #555; background: #222; }
 
 /* Primary action button */
 .btn-primary {
     display: block;
     width: 100%;
-    background: #1a1a1a;
-    color: white;
+    background: #e8e8e8;
+    color: #0d0d0d;
     border: none;
     border-radius: 10px;
     padding: 0.875rem;
@@ -85,7 +89,7 @@ h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; }
     margin-top: 0.75rem;
     transition: background 0.15s;
 }
-.btn-primary:hover { background: #333; }
+.btn-primary:hover { background: #ccc; }
 
 /* Secondary / back button */
 .btn-back {
@@ -98,37 +102,40 @@ h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; }
     display: inline-block;
     margin-top: 0.75rem;
 }
-.btn-back:hover { color: #1a1a1a; }
+.btn-back:hover { color: #e8e8e8; }
 
 /* Time slots grid */
 .slots-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
 .slot-form { display: contents; }
 .slot-btn {
     padding: 0.5rem 0.875rem;
-    background: white;
-    border: 1px solid #e5e5e5;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
     border-radius: 8px;
     cursor: pointer;
     font-size: 0.9rem;
+    color: #e8e8e8;
     transition: border-color 0.15s, background 0.15s;
 }
-.slot-btn:hover { border-color: #1a1a1a; background: #f5f5f5; }
+.slot-btn:hover { border-color: #555; background: #222; }
 
 /* Form inputs */
 .field { margin-bottom: 0.875rem; }
-.field label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.3rem; }
+.field label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.3rem; color: #aaa; }
 .field input, .field textarea {
     width: 100%;
     padding: 0.6rem 0.75rem;
-    border: 1px solid #e5e5e5;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
     border-radius: 8px;
     font-size: 0.95rem;
     font-family: inherit;
+    color: #e8e8e8;
     transition: border-color 0.15s;
 }
 .field input:focus, .field textarea:focus {
     outline: none;
-    border-color: #1a1a1a;
+    border-color: #555;
 }
 .field textarea { resize: vertical; min-height: 80px; }
 
@@ -140,44 +147,47 @@ h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; }
     font-size: 0.7rem;
     padding: 0.3rem 0.25rem;
     border-radius: 6px;
-    background: #f0f0f0;
-    color: #999;
+    background: #1a1a1a;
+    color: #555;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.prog-step.done { background: #e8f5e9; color: #2e7d32; }
-.prog-step.active { background: #1a1a1a; color: white; font-weight: 600; }
+.prog-step.done { background: #1a2e1a; color: #4caf50; }
+.prog-step.active { background: #e8e8e8; color: #0d0d0d; font-weight: 600; }
 
 /* Error */
 .error-msg {
-    background: #fff0f0;
-    border: 1px solid #ffcccc;
+    background: #2a1010;
+    border: 1px solid #5a2020;
     border-radius: 8px;
     padding: 0.625rem 0.875rem;
-    color: #c0392b;
+    color: #ff6b6b;
     font-size: 0.875rem;
     margin-bottom: 0.75rem;
 }
 
 /* Success */
 .success-box {
-    background: #e8f5e9;
-    border: 1px solid #c8e6c9;
+    background: #0f2a0f;
+    border: 1px solid #1e5c1e;
     border-radius: 12px;
     padding: 1.5rem;
     text-align: center;
     margin-bottom: 1rem;
 }
-.success-box h2 { color: #2e7d32; margin-bottom: 0; }
+.success-box h2 { color: #4caf50; margin-bottom: 0; }
 
 /* Date input */
 input[type="date"] {
     width: 100%;
     padding: 0.6rem 0.75rem;
-    border: 1px solid #e5e5e5;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
     border-radius: 8px;
     font-size: 0.95rem;
+    color: #e8e8e8;
+    color-scheme: dark;
     margin-bottom: 0.75rem;
 }
 """
