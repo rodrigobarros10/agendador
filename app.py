@@ -312,7 +312,7 @@ elif st.session_state.step == "form":
                     })
                     .execute()
                 )
-                st.session_state.appointment_id = res.data[0]["id"]
+                st.session_state.appointment_id = (res.data or [{}])[0].get("id")
                 _notify_telegram(name.strip(), digits, svc, barber, date_str, slot)
                 _booked = True
             except Exception as exc:
