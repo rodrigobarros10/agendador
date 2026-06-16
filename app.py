@@ -4,7 +4,7 @@ from datetime import date, timedelta
 import streamlit as st
 
 from lib.availability import get_available_slots
-from lib.supabase_client import get_supabase
+from lib.supabase_client import get_supabase, get_supabase_admin
 from lib.telegram import send_telegram
 from lib.utils import format_currency, format_date_ptbr, format_phone, mask_phone
 
@@ -295,7 +295,7 @@ elif st.session_state.step == "form":
             _booked = False
             try:
                 res = (
-                    get_supabase()
+                    get_supabase_admin()
                     .table("appointments")
                     .insert({
                         "barbershop_id": shop["id"],
